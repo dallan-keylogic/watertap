@@ -12,6 +12,7 @@
 """
 Initial property package for seawater system
 """
+
 # Import Pyomo libraries
 from pyomo.environ import (
     Constraint,

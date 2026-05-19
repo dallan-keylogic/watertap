@@ -12,6 +12,7 @@
 """
 Initial property package for seawater system
 """
+
 # Import Pyomo libraries
 from pyomo.environ import (
     Constraint,
@@ -29,7 +30,6 @@ from pyomo.environ import (
 )
 from pyomo.environ import units as pyunits
 from pyomo.contrib.solver.common.util import NoSolutionError
-
 
 # Import IDAES cores
 from idaes.core import (
