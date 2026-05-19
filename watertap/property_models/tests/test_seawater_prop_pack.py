@@ -373,6 +373,7 @@ def test_list_properties(capsys):
         ["Mass density of pure water", "dens_mass_solvent", "kg*m**(-3)"],
         ["Latent heat of vaporization", "dh_vap_mass", "J*kg**(-1)"],
         ["Diffusivity", "diffus_phase_comp", "m**2/s"],
+        ["Energy density", "energy_density_phase", "J/m**3"],
         ["Enthalpy flow", "enth_flow", "J/s"],
         ["Specific enthalpy", "enth_mass_phase", "J*kg**(-1)"],
         ["Mass flow rate", "flow_mass_phase_comp", "kg/s"],

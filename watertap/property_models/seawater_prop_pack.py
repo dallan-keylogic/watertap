@@ -1937,3 +1937,8 @@ class SeawaterPropertySet(PropertySetBase):
         doc="Boiling point elevation temperature",
         units=pyunits.K,
     )
+    energy_density_phase = PropertyMetadata(
+        name="energy_density_phase",
+        doc="Energy density",
+        units=pyunits.J / pyunits.m**3,
+    )

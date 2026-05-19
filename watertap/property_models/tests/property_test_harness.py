@@ -12,6 +12,7 @@
 
 import pytest
 from math import fabs
+import copy
 
 from pyomo.environ import (
     ConcreteModel,
@@ -60,7 +61,9 @@ class PropertyRuntimeError(RuntimeError):
 
 
 class PropertyTestHarness:
+
     def configure_class(self, m):
+        self.expected_on_demand = set()
         self.configure()
 
         # attaching objects to model to carry through in pytest frame
@@ -68,6 +71,7 @@ class PropertyTestHarness:
         m._test_objs = Block()
         m._test_objs.stateblock_statistics = self.stateblock_statistics
         m._test_objs.default_solution = self.default_solution
+        m._test_objs.expected_on_demand = self.expected_on_demand
 
     def configure(self):
         """
@@ -170,6 +174,8 @@ class PropertyTestHarness:
         # check that properties are not built if not demanded
         for v in metadata.list_supported_properties():
             if metadata[v.name].method is not None:
+                if v.name in m._test_objs.expected_on_demand:
+                    continue
                 if m.fs.stream[0].is_property_constructed(v.name):
                     raise PropertyAttributeError(
                         "Property {v_name} is an on-demand property, but was found "
@@ -346,7 +352,7 @@ class PropertyTestHarness:
         m = frame_stateblock
 
         # fix state variables
-        fix_state_vars(m.fs.stream)
+        m.fs.stream.fix_initialization_states()
 
         # solve model
         opt = get_solver()
@@ -387,6 +393,11 @@ class PropertyTestHarness:
         m.fs = FlowsheetBlock(dynamic=False)
         m.fs.properties = self.prop_pack()
 
+        param_args = copy.copy(self.param_args)
+        # Defined state is set by the control volume
+        # so we can ignore it here.
+        param_args.pop("defined_state", None)
+
         m.fs.cv = ControlVolume0DBlock(
             dynamic=False,
             has_holdup=False,
@@ -412,6 +423,11 @@ class PropertyTestHarness:
 
         # initialize control volume
         m.fs.cv.initialize()
+
+        # Control volume is not solved by the initialization
+        solver_obj = get_solver()
+        results = solver_obj.solve(m.fs.cv)
+        assert_optimal_termination(results)
 
         # check convergence
         # TODO: update this when IDAES API is updated to return solver status for initialize()
