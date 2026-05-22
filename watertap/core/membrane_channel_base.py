@@ -553,7 +553,7 @@ class MembraneChannelMixin:
                 self.flowsheet().config.time, doc="Average Reynolds Number expression"
             )
             def N_Re_avg(b, t):
-                return sum(b.N_Re[t, x] for x in self.length_domain) / self.nfe
+                return sum(b.N_Re[t, x] for x in self.difference_elements) / self.nfe
 
         if hasattr(self, "K"):
 
@@ -599,8 +599,8 @@ class MembraneChannelMixin:
             doc="Mass transfer coefficient in membrane channel",
         )
         def eq_K(b, t, x, j):
-            if b._skip_element(x):
-                return Constraint.Skip
+            # if b._skip_element(x):
+            #     return Constraint.Skip
             return (
                 b.K[t, x, j] * b.dh
                 # TODO: add diff coefficient to SW prop and consider multi-components
@@ -877,7 +877,11 @@ class MembraneChannelMixin:
                 else:
                     state_args[k] = state_dict[k].value
 
-        if "flow_mass_phase_comp" not in state_args.keys():
+        if not "flow_mass_phase_comp" in state_args.keys() and not (
+            "flow_vol_phase" in state_args.keys()
+            and "conc_mass_phase_comp" in state_args.keys()
+        ):
+            # TODO update error
             raise ConfigurationError(
                 f"{self.__class__.__name__} initialization routine expects "
                 "flow_mass_phase_comp as a state variable. Check "
@@ -890,27 +894,65 @@ class MembraneChannelMixin:
         state_args_retentate = deepcopy(state_args)
 
         state_args_retentate["pressure"] += initialize_guess["deltaP"]
-        for j in self.config.property_package.solvent_set:
-            state_args_retentate["flow_mass_phase_comp"][("Liq", j)] *= (
+        if "flow_mass_phase_comp" in state_args.keys():
+            for j in self.config.property_package.solvent_set:
+                state_args_retentate["flow_mass_phase_comp"][("Liq", j)] *= (
+                    1 - initialize_guess["solvent_recovery"]
+                )
+            for j in self.config.property_package.solute_set:
+                state_args_retentate["flow_mass_phase_comp"][("Liq", j)] *= (
+                    1 - initialize_guess["solute_recovery"]
+                )
+        else:
+            # flow_vol_phase in state args
+            state_args_retentate["flow_vol_phase"]["Liq"] *= (
                 1 - initialize_guess["solvent_recovery"]
             )
-        for j in self.config.property_package.solute_set:
-            state_args_retentate["flow_mass_phase_comp"][("Liq", j)] *= (
-                1 - initialize_guess["solute_recovery"]
-            )
+            for j in self.config.property_package.solvent_set:
+                state_args_retentate["conc_mass_phase_comp"][("Liq", j)] *= (
+                    1
+                    - initialize_guess["solvent_recovery"]
+                    + initialize_guess["solute_recovery"]
+                )
+            for j in self.config.property_package.solute_set:
+                state_args_retentate["conc_mass_phase_comp"][("Liq", j)] *= (
+                    1
+                    - initialize_guess["solute_recovery"]
+                    + initialize_guess["solvent_recovery"]
+                )
 
         # slightly modify initial values for other state blocks
+        # TODO why does this exist here when _get_state_args_permeate
+        # exists on the 1D RO?
         state_args_permeate = deepcopy(state_args)
 
         state_args_permeate["pressure"] = 101325  # 1 bar
-        for j in self.config.property_package.solvent_set:
-            state_args_permeate["flow_mass_phase_comp"][("Liq", j)] *= initialize_guess[
+        if "flow_mass_phase_comp" in state_args.keys():
+            for j in self.config.property_package.solvent_set:
+                state_args_permeate["flow_mass_phase_comp"][
+                    ("Liq", j)
+                ] *= initialize_guess["solvent_recovery"]
+            for j in self.config.property_package.solute_set:
+                state_args_permeate["flow_mass_phase_comp"][
+                    ("Liq", j)
+                ] *= initialize_guess["solute_recovery"]
+        else:
+            # flow_vol_phase in state args
+            state_args_permeate["flow_vol_phase"]["Liq"] *= initialize_guess[
                 "solvent_recovery"
             ]
-        for j in self.config.property_package.solute_set:
-            state_args_permeate["flow_mass_phase_comp"][("Liq", j)] *= initialize_guess[
-                "solute_recovery"
-            ]
+            for j in self.config.property_package.solvent_set:
+                state_args_permeate["conc_mass_phase_comp"][("Liq", j)] *= (
+                    1
+                    + initialize_guess["solvent_recovery"]
+                    - initialize_guess["solute_recovery"]
+                )
+            for j in self.config.property_package.solute_set:
+                state_args_permeate["conc_mass_phase_comp"][("Liq", j)] *= (
+                    1
+                    + initialize_guess["solute_recovery"]
+                    - initialize_guess["solvent_recovery"]
+                )
 
         return {
             "feed_side": state_args,
@@ -933,13 +975,22 @@ class MembraneChannelMixin:
         state_args_interface_in = deepcopy(prop_in)
         state_args_interface_out = deepcopy(prop_out)
 
-        for j in self.config.property_package.solute_set:
-            state_args_interface_in["flow_mass_phase_comp"][
-                ("Liq", j)
-            ] *= initialize_guess["cp_modulus"]
-            state_args_interface_out["flow_mass_phase_comp"][
-                ("Liq", j)
-            ] *= initialize_guess["cp_modulus"]
+        if "flow_mass_phase_comp" in state_args_interface_in.keys():
+            for j in self.config.property_package.solute_set:
+                state_args_interface_in["flow_mass_phase_comp"][
+                    ("Liq", j)
+                ] *= initialize_guess["cp_modulus"]
+                state_args_interface_out["flow_mass_phase_comp"][
+                    ("Liq", j)
+                ] *= initialize_guess["cp_modulus"]
+        else:
+            for j in self.config.property_package.solute_set:
+                state_args_interface_in["conc_mass_phase_comp"][
+                    ("Liq", j)
+                ] *= initialize_guess["cp_modulus"]
+                state_args_interface_out["conc_mass_phase_comp"][
+                    ("Liq", j)
+                ] *= initialize_guess["cp_modulus"]
 
         x = 0.5
         state_args_tx = {}

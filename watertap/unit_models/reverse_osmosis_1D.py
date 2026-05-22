@@ -12,6 +12,7 @@
 
 # Import Pyomo libraries
 from pyomo.environ import (
+    Constraint,
     Var,
     NonNegativeReals,
     NegativeReals,
@@ -172,6 +173,8 @@ class ReverseOsmosis1DData(ReverseOsmosisBaseData):
             doc="Mass transfer from feed to permeate",
         )
         def eq_connect_mass_transfer(b, t, x, p, j):
+            if b.feed_side._skip_element(x):
+                return Constraint.Skip
             return (
                 b.permeate_side[t, x].get_material_flow_terms(p, j)
                 == -b.feed_side.mass_transfer_term[t, x, p, j] * b.length / b.nfe
@@ -187,6 +190,8 @@ class ReverseOsmosis1DData(ReverseOsmosisBaseData):
             doc="Mass transfer term",
         )
         def eq_mass_flux_equal_mass_transfer(b, t, x, p, j):
+            if b.feed_side._skip_element(x):
+                return Constraint.Skip
             return (
                 b.flux_mass_phase_comp[t, x, p, j] * b.area
                 == -b.feed_side.mass_transfer_term[t, x, p, j] * b.length
@@ -205,6 +210,7 @@ class ReverseOsmosis1DData(ReverseOsmosisBaseData):
             return b.mixed_permeate[t].get_material_flow_terms(p, j) == sum(
                 b.permeate_side[t, x].get_material_flow_terms(p, j)
                 for x in b.difference_elements
+                if not b.feed_side._skip_element(x)
             )
 
     def calculate_scaling_factors(self):

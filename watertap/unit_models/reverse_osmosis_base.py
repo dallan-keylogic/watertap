@@ -18,6 +18,7 @@ from pyomo.environ import (
     Param,
     Suffix,
     Var,
+    Constraint,
     check_optimal_termination,
     exp,
     units as pyunits,
@@ -153,6 +154,8 @@ class ReverseOsmosisBaseData(InitializationMixin, UnitModelBlockData):
 
         # Add other equations
         def eq_permeate_outlet_isobaric(b, t, x):
+            if b.feed_side._skip_element(x):
+                return Constraint.Skip
             return b.permeate_side[t, x].pressure == b.mixed_permeate[t].pressure
 
         # # ==========================================================================
@@ -163,6 +166,8 @@ class ReverseOsmosisBaseData(InitializationMixin, UnitModelBlockData):
             doc="Isothermal assumption for permeate",
         )
         def eq_permeate_isothermal(b, t, x):
+            if b.feed_side._skip_element(x):
+                return Constraint.Skip
             return (
                 b.feed_side.properties[t, x].temperature
                 == b.permeate_side[t, x].temperature
@@ -383,6 +388,8 @@ class ReverseOsmosisBaseData(InitializationMixin, UnitModelBlockData):
                 doc="Solvent and solute mass flux using SD model",
             )
             def eq_flux_mass(b, t, x, p, j):
+                if b.feed_side._skip_element(x):
+                    return Constraint.Skip
                 prop_feed = b.feed_side.properties[t, x]
                 prop_perm = b.permeate_side[t, x]
                 interface = b.feed_side.properties_interface[t, x]
@@ -419,6 +426,8 @@ class ReverseOsmosisBaseData(InitializationMixin, UnitModelBlockData):
                 doc="Solvent and solute mass flux using SKK model",
             )
             def eq_flux_mass(b, t, x, p, j):
+                if b.feed_side._skip_element(x):
+                    return Constraint.Skip
                 prop_feed = b.feed_side.properties[t, x]
                 prop_perm = b.permeate_side[t, x]
                 interface = b.feed_side.properties_interface[t, x]
@@ -476,6 +485,8 @@ class ReverseOsmosisBaseData(InitializationMixin, UnitModelBlockData):
                 doc="Concentration polarization",
             )
             def eq_concentration_polarization(b, t, x, j):
+                if b.feed_side._skip_element(x):
+                    return Constraint.Skip
                 jw = b.flux_mass_phase_comp[t, x, "Liq", "H2O"] / self.dens_solvent
                 js = b.flux_mass_phase_comp[t, x, "Liq", j]
                 return b.feed_side.properties_interface[t, x].conc_mass_phase_comp[
@@ -533,7 +544,11 @@ class ReverseOsmosisBaseData(InitializationMixin, UnitModelBlockData):
                 else:
                     state_args[k] = state_dict[k].value
 
-        if "flow_mass_phase_comp" not in state_args.keys():
+        if not "flow_mass_phase_comp" in state_args.keys() and not (
+            "flow_vol_phase" in state_args.keys()
+            and "conc_mass_phase_comp" in state_args.keys()
+        ):
+            # TODO update error
             raise ConfigurationError(
                 f"{self.__class__.__name__} initialization routine expects "
                 "flow_mass_phase_comp as a state variable. Check "
@@ -546,14 +561,32 @@ class ReverseOsmosisBaseData(InitializationMixin, UnitModelBlockData):
         state_args_permeate = deepcopy(state_args)
 
         state_args_permeate["pressure"] = mixed_permeate_properties.pressure.value
-        for j in self.config.property_package.solvent_set:
-            state_args_permeate["flow_mass_phase_comp"][("Liq", j)] *= initialize_guess[
+        if "flow_mass_phase_comp" in state_args.keys():
+            for j in self.config.property_package.solvent_set:
+                state_args_permeate["flow_mass_phase_comp"][
+                    ("Liq", j)
+                ] *= initialize_guess["solvent_recovery"]
+            for j in self.config.property_package.solute_set:
+                state_args_permeate["flow_mass_phase_comp"][
+                    ("Liq", j)
+                ] *= initialize_guess["solute_recovery"]
+        else:
+            # flow_vol_phase in state args
+            state_args_permeate["flow_vol_phase"]["Liq"] *= initialize_guess[
                 "solvent_recovery"
             ]
-        for j in self.config.property_package.solute_set:
-            state_args_permeate["flow_mass_phase_comp"][("Liq", j)] *= initialize_guess[
-                "solute_recovery"
-            ]
+            for j in self.config.property_package.solvent_set:
+                state_args_permeate["conc_mass_phase_comp"][("Liq", j)] *= (
+                    1
+                    + initialize_guess["solvent_recovery"]
+                    - initialize_guess["solute_recovery"]
+                )
+            for j in self.config.property_package.solute_set:
+                state_args_permeate["conc_mass_phase_comp"][("Liq", j)] *= (
+                    1
+                    + initialize_guess["solute_recovery"]
+                    - initialize_guess["solvent_recovery"]
+                )
 
         return state_args_permeate
 
@@ -846,7 +879,10 @@ class ReverseOsmosisBaseData(InitializationMixin, UnitModelBlockData):
         for sb in (self.permeate_side, self.mixed_permeate):
             for blk in sb.values():
                 for j in self.config.property_package.solute_set:
-                    self._rescale_permeate_variable(blk.flow_mass_phase_comp["Liq", j])
+                    if blk.is_property_constructed("flow_mass_phase_comp"):
+                        self._rescale_permeate_variable(
+                            blk.flow_mass_phase_comp["Liq", j]
+                        )
                     if blk.is_property_constructed("mass_frac_phase_comp"):
                         self._rescale_permeate_variable(
                             blk.mass_frac_phase_comp["Liq", j]

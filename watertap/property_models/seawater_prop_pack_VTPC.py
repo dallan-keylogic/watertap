@@ -280,7 +280,8 @@ class _SeawaterVTPCStateBlock(StateBlock):
             block_solver=solver, block_solver_options=optarg, output_level=outlvl
         )
         for blkdata in self.values():
-            # This should really be brought inside the block triangularization
+            if not blkdata.active:
+                continue
             try:
                 init_obj.initialize(blkdata)
             except NoSolutionError as err:
@@ -596,9 +597,9 @@ class SeawaterVTPCStateBlockData(SeawaterStateBlockData):
                 ):
                     if j == "TDS":
                         sf = iscale.get_scaling_factor(
-                            self.flow_mass_phase_comp["Liq", j]
+                            self.conc_mass_phase_comp["Liq", j]
                         ) / iscale.get_scaling_factor(
-                            self.flow_mass_phase_comp["Liq", "H2O"]
+                            self.conc_mass_phase_comp["Liq", "H2O"]
                         )
                         iscale.set_scaling_factor(
                             self.mass_frac_phase_comp["Liq", j], sf
