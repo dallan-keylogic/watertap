@@ -136,7 +136,7 @@ class OsmoticallyAssistedReverseOsmosis1DData(
                 return mem_side.deltaP_stage[t] == b.length * mem_side.dP_dx[t, x]
 
         else:
-
+            # TODO why aren't we using PyomoDAE discretization to calculate this?
             @mem_side.Constraint(
                 self.flowsheet().config.time, doc="Pressure drop across unit"
             )
@@ -178,10 +178,10 @@ class OsmoticallyAssistedReverseOsmosis1DData(
             self.config.property_package.component_list,
             doc="Mass transfer term",
         )
-        def eq_mass_transfer_term(self, t, x, p, j):
+        def eq_mass_transfer_term(b, t, x, p, j):
             return (
-                self.mass_transfer_phase_comp[t, x, p, j]
-                == -self.feed_side.mass_transfer_term[t, x, p, j]
+                b.mass_transfer_phase_comp[t, x, p, j]
+                == -b.feed_side.mass_transfer_term[t, x, p, j]
             )
 
         # Feed and permeate-side connection
@@ -236,3 +236,32 @@ class OsmoticallyAssistedReverseOsmosis1DData(
             for v in self.permeate_side.deltaP_stage.values():
                 if iscale.get_scaling_factor(v) is None:
                     iscale.set_scaling_factor(v, 1e-4)
+        if self.config.pressure_change_type == PressureChangeType.fixed_per_stage:
+            # TODO additional scaling
+            pass
+        else:
+            for t, condata in self.eq_pressure_drop.items():
+                sf_dP = iscale.get_scaling_factor(self.deltaP[t])
+                iscale.constraint_scaling_transform(condata, sf_dP)
+
+        for (t, p, j), condata in self.eq_permeate_production.items():
+            sf = iscale.get_scaling_factor(
+                self.mixed_permeate[t].get_material_flow_terms(p, j), default=1
+            )
+            iscale.constraint_scaling_transform(condata, sf)
+
+        for (t, x, p, j), condata in self.eq_mass_transfer_term.items():
+            sf = min(
+                iscale.get_scaling_factor(
+                    self.mass_transfer_phase_comp[t, x, p, j], default=1
+                ),
+                iscale.get_scaling_factor(
+                    self.feed_side.mass_transfer_term[t, x, p, j], default=1
+                ),
+            )
+            iscale.constraint_scaling_transform(condata, sf)
+        for (t, x, p, j), condata in self.eq_connect_mass_transfer.items():
+            sf = iscale.get_scaling_factor(
+                self.feed_side.mass_transfer_term[t, x, p, j], default=1
+            )
+            iscale.constraint_scaling_transform(condata, sf)
