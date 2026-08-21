@@ -1646,6 +1646,45 @@ class SeawaterStateBlockData(StateBlockData):
             "pressure": self.pressure,
         }
 
+    def create_zero_flow_equations(self, create_concentration_variables):
+        """
+        Create equations to enforce zero flow in a state block.
+
+        Args:
+            create_concentration_variables (bool): If True, create mass
+                fraction variables so that other properties, such as
+                concentration and density, can be calculated. Note that
+                since these variables cannot be calculated from the (zero)
+                phase component flow rates, they must be given by
+                additional equations written by the user.
+
+        Returns:
+            None
+        """
+
+        @self.Constraint(self.phase_component_set)
+        def eq_zero_flow(b, p, j):
+            return b.flow_mass_phase_comp[p, j] == 0 * pyunits.kg / pyunits.s
+
+        if create_concentration_variables:
+            self.mass_frac_phase_comp = Var(
+                self.params.phase_list,
+                self.params.component_list,
+                initialize=0.1,
+                bounds=(0.0, None),
+                units=pyunits.dimensionless,
+                doc="Mass fraction",
+            )
+            assert self.config.defined_state == False
+
+            @self.Constraint(self.params.phase_list)
+            def eq_sum_mass_frac_phase_comp(b, p):
+                1 == sum(
+                    b.mass_frac_phase_comp[p, j]
+                    for j in b.component_list
+                    if (p, j) in b.phase_component_set
+                )
+
     # -----------------------------------------------------------------------------
     # Scaling methods
     def calculate_scaling_factors(self):
@@ -1811,6 +1850,18 @@ class SeawaterStateBlockData(StateBlockData):
                 self.pressure_osm_phase["Liq"], default=1, warning=True
             )
             iscale.constraint_scaling_transform(self.eq_pressure_osm_phase["Liq"], sf)
+
+        # Zero flow constraints
+        if self.is_property_constructed("eq_zero_flow"):
+            for (p, j), condata in self.eq_zero_flow.items():
+                sf = iscale.get_scaling_factor(
+                    self.flow_mass_phase_comp[p, j], default=1, warning=True
+                )
+                iscale.constraint_scaling_transform(condata, sf)
+
+        if self.is_property_constructed("eq_sum_mass_frac_phase_comp"):
+            # Register that the constraint is well-scaled
+            iscale.constraint_scaling_transform(self.eq_sum_mass_frac_phase_comp, 1)
 
         # transforming constraints
         transform_property_constraints(self)

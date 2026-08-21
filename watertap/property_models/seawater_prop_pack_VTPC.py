@@ -550,6 +550,25 @@ class SeawaterVTPCStateBlockData(SeawaterStateBlockData):
             "pressure": self.pressure,
         }
 
+    def create_zero_flow_equations(self, create_concentration_variables):
+        """
+        Create equations to enforce zero flow in a state block.
+
+        Args:
+            create_concentration_variables (bool): Because this property
+                package has concentration variables as state variables,
+                this argument is ignored.
+
+        Returns:
+            None
+        """
+
+        @self.Constraint(self.phase_list)
+        def eq_zero_flow(b, p):
+            return b.flow_vol_phase[p] == 0 * pyunits.m**3 / pyunits.s
+
+        assert self.config.defined_state == False
+
     # -----------------------------------------------------------------------------
     # Scaling methods
     def calculate_scaling_factors(self):
@@ -694,6 +713,11 @@ class SeawaterVTPCStateBlockData(SeawaterStateBlockData):
                 self.pressure_osm_phase["Liq"], default=1, warning=True
             )
             iscale.constraint_scaling_transform(self.eq_pressure_osm_phase["Liq"], sf)
+
+        if self.is_property_constructed("eq_zero_flow"):
+            for p, condata in self.eq_zero_flow.items():
+                sf_V = iscale.get_scaling_factor(self.flow_vol_phase[p], warning=True)
+                iscale.constraint_scaling_transform(condata, sf_V)
 
         # transforming constraints
         transform_property_constraints(self)
