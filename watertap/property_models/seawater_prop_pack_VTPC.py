@@ -124,19 +124,6 @@ class SeawaterVTPCParameterData(SeawaterParameterData):
         self.set_default_scaling("diffus_phase_comp", 1e9)
         self.set_default_scaling("boiling_point_elevation_phase", 1e0, index="Liq")
 
-    def list_properties(self):
-        """
-        Return list of property descriptions, names, and units.
-        """
-        prop_list = get_property_metadata(self)
-        return prop_list
-
-    def print_properties(self):
-        """
-        Print table of property descriptions, names, and units to the console.
-        """
-        print_property_metadata(self)
-
     @classmethod
     def define_metadata(cls, obj):
         """Define properties supported and units."""
