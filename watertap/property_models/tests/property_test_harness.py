@@ -367,7 +367,9 @@ class PropertyTestHarness:
         m = frame_stateblock
 
         # fix state variables
+        # TODO fix_initialization_states is broken for some property packages
         m.fs.stream.fix_initialization_states()
+        # fix_state_vars(m.fs.stream)
 
         # solve model
         opt = get_solver()
@@ -441,16 +443,17 @@ class PropertyTestHarness:
         # TODO: update this when IDAES API is updated to return solver status for initialize()
         self.check_constraint_status(m.fs.cv)
 
-        _legacy_testing_translator(
-            m.fs.cv.properties_in[0],
-            m._test_objs.default_solution,
-            check_property_constructed=True,
-        )
-        _legacy_testing_translator(
-            m.fs.cv.properties_out[0],
-            m._test_objs.default_solution,
-            check_property_constructed=True,
-        )
+        for blk in [m.fs.cv.properties_in[0], m.fs.cv.properties_out[0]]:
+            try:
+                _legacy_testing_translator(
+                    blk,
+                    m._test_objs.default_solution,
+                    check_property_constructed=True,
+                )
+            except AssertionError as err:
+                raise AssertionError(
+                    f"Values in {blk.name} do not match expected values."
+                ) from err
 
 
 class PropertyRegressionTest:
