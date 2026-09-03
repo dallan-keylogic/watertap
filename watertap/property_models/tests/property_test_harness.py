@@ -577,7 +577,6 @@ class PropertyCalculateStateTest:
                 except TypeError:
                     # Not a tuple
                     l = None
-                    pass
                 if l is not None and l == 1:
                     # Tuple of length 1, set_default_scaling
                     # expects a string/number, not a tuple
