@@ -15,18 +15,11 @@ Initial property package for seawater system
 
 # Import Pyomo libraries
 from pyomo.environ import (
+    check_optimal_termination,
     Constraint,
-    Expression,
-    Reals,
-    NonNegativeReals,
-    Var,
-    Param,
     Suffix,
     value,
-    log,
-    log10,
-    exp,
-    check_optimal_termination,
+    Var,
 )
 from pyomo.environ import units as pyunits
 from pyomo.contrib.solver.common.util import NoSolutionError
@@ -34,20 +27,12 @@ from pyomo.contrib.solver.common.util import NoSolutionError
 # Import IDAES cores
 from idaes.core import (
     declare_process_block_class,
-    MaterialFlowBasis,
-    PhysicalParameterBlock,
-    StateBlockData,
     StateBlock,
-    MaterialBalanceType,
-    EnergyBalanceType,
 )
-from idaes.core.base.property_set import PropertyMetadata, PropertySetBase
-from idaes.core.base.components import Solute, Solvent
-from idaes.core.base.phases import LiquidPhase
+from idaes.core.base.components import Solute
 from idaes.core.initialization.block_triangularization import (
     BlockTriangularizationInitializer,
 )
-from idaes.core.util.constants import Constants
 from idaes.core.util.initialization import (
     fix_state_vars,
     revert_state_vars,
@@ -56,7 +41,6 @@ from idaes.core.util.initialization import (
 import idaes.logger as idaeslog
 from idaes.core.util.model_statistics import (
     degrees_of_freedom,
-    number_unfixed_variables,
 )
 from idaes.core.util.exceptions import (
     ConfigurationError,
@@ -69,7 +53,6 @@ from idaes.core.util.exceptions import BurntToast
 # Import WaterTAP libraries
 from watertap.core.solvers import get_solver
 from watertap.core.util.scaling import transform_property_constraints
-from watertap.core.util.property_helpers import get_property_metadata
 
 from watertap.property_models.seawater_prop_pack import (
     SeawaterParameterData,
@@ -322,112 +305,112 @@ class _SeawaterVTPCStateBlock(StateBlock):
         revert_state_vars(self, flags)
         init_log.info("{} State Released.".format(self.name))
 
-    # def calculate_state(
-    #     self,
-    #     var_args=None,
-    #     hold_state=False,
-    #     outlvl=idaeslog.NOTSET,
-    #     solver=None,
-    #     optarg=None,
-    # ):
-    #     """
-    #     Solves state blocks given a set of variables and their values. These variables can
-    #     be state variables or properties. This method is typically used before
-    #     initialization to solve for state variables because non-state variables (i.e. properties)
-    #     cannot be fixed in initialization routines.
-    #     Keyword Arguments:
-    #         var_args : dictionary with variables and their values, they can be state variables or properties
-    #                    {(VAR_NAME, INDEX): VALUE}
-    #         hold_state : flag indicating whether all of the state variables should be fixed after calculate state.
-    #                      True - State variables will be fixed.
-    #                      False - State variables will remain unfixed, unless already fixed.
-    #         outlvl : idaes logger object that sets output level of solve call (default=idaeslog.NOTSET)
-    #         solver : solver name string if None is provided the default solver
-    #                  for IDAES will be used (default = None)
-    #         optarg : solver options dictionary object (default={})
-    #     Returns:
-    #         results object from state block solve
-    #     """
-    #     # Get logger
-    #     solve_log = idaeslog.getSolveLogger(self.name, level=outlvl, tag="properties")
+    def calculate_state(
+        self,
+        var_args=None,
+        hold_state=False,
+        outlvl=idaeslog.NOTSET,
+        solver=None,
+        optarg=None,
+    ):
+        """
+        Solves state blocks given a set of variables and their values. These variables can
+        be state variables or properties. This method is typically used before
+        initialization to solve for state variables because non-state variables (i.e. properties)
+        cannot be fixed in initialization routines.
+        Keyword Arguments:
+            var_args : dictionary with variables and their values, they can be state variables or properties
+                       {(VAR_NAME, INDEX): VALUE}
+            hold_state : flag indicating whether all of the state variables should be fixed after calculate state.
+                         True - State variables will be fixed.
+                         False - State variables will remain unfixed, unless already fixed.
+            outlvl : idaes logger object that sets output level of solve call (default=idaeslog.NOTSET)
+            solver : solver name string if None is provided the default solver
+                     for IDAES will be used (default = None)
+            optarg : solver options dictionary object (default={})
+        Returns:
+            results object from state block solve
+        """
+        # Get logger
+        solve_log = idaeslog.getSolveLogger(self.name, level=outlvl, tag="properties")
 
-    #     # Initialize at current state values (not user provided)
-    #     self.initialize(solver=solver, optarg=optarg, outlvl=outlvl)
+        # Initialize at current state values (not user provided)
+        self.initialize(solver=solver, optarg=optarg, outlvl=outlvl)
 
-    #     # Set solver and options
-    #     opt = get_solver(solver, optarg)
+        # Set solver and options
+        opt = get_solver(solver, optarg)
 
-    #     # Fix variables and check degrees of freedom
-    #     flags = (
-    #         {}
-    #     )  # dictionary noting which variables were fixed and their previous state
-    #     for k in self.keys():
-    #         sb = self[k]
-    #         for (v_name, ind), val in var_args.items():
-    #             var = getattr(sb, v_name)
-    #             if iscale.get_scaling_factor(var[ind]) is None:
-    #                 _log.warning(
-    #                     "While using the calculate_state method on {sb_name}, variable {v_name} "
-    #                     "was provided as an argument in var_args, but it does not have a scaling "
-    #                     "factor. This suggests that the calculate_scaling_factor method has not been "
-    #                     "used or the variable was created on demand after the scaling factors were "
-    #                     "calculated. It is recommended to touch all relevant variables (i.e. call "
-    #                     "them or set an initial value) before using the calculate_scaling_factor "
-    #                     "method.".format(v_name=v_name, sb_name=sb.name)
-    #                 )
-    #             if var[ind].is_fixed():
-    #                 flags[(k, v_name, ind)] = True
-    #                 if value(var[ind]) != val:
-    #                     raise ConfigurationError(
-    #                         "While using the calculate_state method on {sb_name}, {v_name} was "
-    #                         "fixed to a value {val}, but it was already fixed to value {val_2}. "
-    #                         "Unfix the variable before calling the calculate_state "
-    #                         "method or update var_args."
-    #                         "".format(
-    #                             sb_name=sb.name,
-    #                             v_name=var.name,
-    #                             val=val,
-    #                             val_2=value(var[ind]),
-    #                         )
-    #                     )
-    #             else:
-    #                 flags[(k, v_name, ind)] = False
-    #                 var[ind].fix(val)
+        # Fix variables and check degrees of freedom
+        flags = (
+            {}
+        )  # dictionary noting which variables were fixed and their previous state
+        for k in self.keys():
+            sb = self[k]
+            for (v_name, ind), val in var_args.items():
+                var = getattr(sb, v_name)
+                if iscale.get_scaling_factor(var[ind]) is None:
+                    _log.warning(
+                        "While using the calculate_state method on {sb_name}, variable {v_name} "
+                        "was provided as an argument in var_args, but it does not have a scaling "
+                        "factor. This suggests that the calculate_scaling_factor method has not been "
+                        "used or the variable was created on demand after the scaling factors were "
+                        "calculated. It is recommended to touch all relevant variables (i.e. call "
+                        "them or set an initial value) before using the calculate_scaling_factor "
+                        "method.".format(v_name=v_name, sb_name=sb.name)
+                    )
+                if var[ind].is_fixed():
+                    flags[(k, v_name, ind)] = True
+                    if value(var[ind]) != val:
+                        raise ConfigurationError(
+                            "While using the calculate_state method on {sb_name}, {v_name} was "
+                            "fixed to a value {val}, but it was already fixed to value {val_2}. "
+                            "Unfix the variable before calling the calculate_state "
+                            "method or update var_args."
+                            "".format(
+                                sb_name=sb.name,
+                                v_name=var.name,
+                                val=val,
+                                val_2=value(var[ind]),
+                            )
+                        )
+                else:
+                    flags[(k, v_name, ind)] = False
+                    var[ind].fix(val)
 
-    #         if degrees_of_freedom(sb) != 0:
-    #             raise RuntimeError(
-    #                 "While using the calculate_state method on {sb_name}, the degrees "
-    #                 "of freedom were {dof}, but 0 is required. Check var_args and ensure "
-    #                 "the correct fixed variables are provided."
-    #                 "".format(sb_name=sb.name, dof=degrees_of_freedom(sb))
-    #             )
+            if degrees_of_freedom(sb) != 0:
+                raise RuntimeError(
+                    "While using the calculate_state method on {sb_name}, the degrees "
+                    "of freedom were {dof}, but 0 is required. Check var_args and ensure "
+                    "the correct fixed variables are provided."
+                    "".format(sb_name=sb.name, dof=degrees_of_freedom(sb))
+                )
 
-    #     # Solve
-    #     with idaeslog.solver_log(solve_log, idaeslog.DEBUG) as slc:
-    #         results = solve_indexed_blocks(opt, [self], tee=slc.tee)
-    #         solve_log.info_high(
-    #             "Calculate state: {}.".format(idaeslog.condition(results))
-    #         )
+        # Solve
+        with idaeslog.solver_log(solve_log, idaeslog.DEBUG) as slc:
+            results = solve_indexed_blocks(opt, [self], tee=slc.tee)
+            solve_log.info_high(
+                "Calculate state: {}.".format(idaeslog.condition(results))
+            )
 
-    #     if not check_optimal_termination(results):
-    #         _log.warning(
-    #             "While using the calculate_state method on {sb_name}, the solver failed "
-    #             "to converge to an optimal solution. This suggests that the user provided "
-    #             "infeasible inputs, or that the model is poorly scaled, poorly initialized, "
-    #             "or degenerate."
-    #         )
+        if not check_optimal_termination(results):
+            _log.warning(
+                "While using the calculate_state method on {sb_name}, the solver failed "
+                "to converge to an optimal solution. This suggests that the user provided "
+                "infeasible inputs, or that the model is poorly scaled, poorly initialized, "
+                "or degenerate."
+            )
 
-    #     # unfix all variables fixed with var_args
-    #     for (k, v_name, ind), previously_fixed in flags.items():
-    #         if not previously_fixed:
-    #             var = getattr(self[k], v_name)
-    #             var[ind].unfix()
+        # unfix all variables fixed with var_args
+        for (k, v_name, ind), previously_fixed in flags.items():
+            if not previously_fixed:
+                var = getattr(self[k], v_name)
+                var[ind].unfix()
 
-    #     # fix state variables if hold_state
-    #     if hold_state:
-    #         fix_state_vars(self)
+        # fix state variables if hold_state
+        if hold_state:
+            self.fix_initialization_states(self)
 
-    #     return results
+        return results
 
 
 @declare_process_block_class(

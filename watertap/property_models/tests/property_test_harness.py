@@ -37,7 +37,6 @@ from idaes.core.util.scaling import (
     unscaled_constraints_generator,
     badly_scaled_var_generator,
 )
-from idaes.core.util.initialization import fix_state_vars
 from idaes.core.util.testing import assert_solution_equivalent
 from watertap.core.solvers import get_solver
 
@@ -366,10 +365,7 @@ class PropertyTestHarness:
     def test_default_solve(self, frame_stateblock):
         m = frame_stateblock
 
-        # fix state variables
-        # TODO fix_initialization_states is broken for some property packages
         m.fs.stream.fix_initialization_states()
-        # fix_state_vars(m.fs.stream)
 
         # solve model
         opt = get_solver()
@@ -573,9 +569,20 @@ class PropertyCalculateStateTest:
         m.fs = FlowsheetBlock(dynamic=False)
         m.fs.properties = self.prop_pack()
         m.fs.stream = m.fs.properties.build_state_block([0], **self.param_args)
-
         # set default scaling
         for (v_str, ind), sf in self.scaling_args.items():
+            if not isinstance(ind, str):
+                try:
+                    l = len(ind)
+                except TypeError:
+                    # Not a tuple
+                    l = None
+                    pass
+                if l is not None and l == 1:
+                    # Tuple of length 1, set_default_scaling
+                    # expects a string/number, not a tuple
+                    # with one element
+                    ind = ind[0]
             m.fs.properties.set_default_scaling(v_str, sf, index=ind)
 
         # touch all properties in scaling
@@ -596,26 +603,7 @@ class PropertyCalculateStateTest:
         assert_optimal_termination(results)
 
         # check results
-        for (v_name, ind), val in self.state_solution.items():
-            var = getattr(m.fs.stream[0], v_name)[ind]
-            # relative tolerance doesn't mean anything for 0-valued things
-            if val == 0:
-                if not pytest.approx(val, abs=1.0e-08) == value(var):
-                    raise PropertyValueError(
-                        "Variable {v_name} with index {ind} is expected to have a value of {val} +/- 1.0e-08, but it "
-                        "has a value of {val_t}. \nUpdate state_solution in the configure function "
-                        "that sets up the PropertyCalculateStateTest".format(
-                            v_name=v_name, ind=ind, val=val, val_t=value(var)
-                        )
-                    )
-            elif not pytest.approx(val, rel=1e-3) == value(var):
-                raise PropertyValueError(
-                    "Variable {v_name} with index {ind} is expected to have a value of {val} +/- 0.1%, but it "
-                    "has a value of {val_t}. \nUpdate state_solution in the configure function "
-                    "that sets up the PropertyCalculateStateTest".format(
-                        v_name=v_name, ind=ind, val=val, val_t=value(var)
-                    )
-                )
+        _legacy_testing_translator(m.fs.stream[0], default_solution=self.state_solution)
 
         # check if any variables are badly scaled
         lst = []
